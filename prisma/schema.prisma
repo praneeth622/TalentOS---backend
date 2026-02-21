@@ -1,0 +1,81 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  employees Employee[]
+  tasks     Task[]
+  aiCaches  AiCache[]
+
+  @@map("organizations")
+}
+
+model Employee {
+  id            String   @id @default(cuid())
+  orgId         String
+  name          String
+  email         String
+  role          String
+  skills        String[]
+  walletAddress String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  tasks        Task[]
+
+  @@unique([orgId, email])
+  @@index([orgId])
+  @@map("employees")
+}
+
+model Task {
+  id          String   @id @default(cuid())
+  orgId       String
+  employeeId  String
+  title       String
+  description String?
+  status      String   @default("TODO")
+  priority    String   @default("MEDIUM")
+  deadline    DateTime?
+  completedAt DateTime?
+  txHash      String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  employee     Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([employeeId])
+  @@index([status])
+  @@map("tasks")
+}
+
+model AiCache {
+  id        String   @id @default(cuid())
+  orgId     String
+  cacheKey  String
+  content   String   @db.Text
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, cacheKey])
+  @@index([orgId])
+  @@index([expiresAt])
+  @@map("ai_caches")
+}
