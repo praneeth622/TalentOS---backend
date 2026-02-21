@@ -5,6 +5,10 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import rateLimit from 'express-rate-limit';
 import authRoutes from './routes/auth.routes';
+import employeeRoutes from './routes/employee.routes';
+import taskRoutes from './routes/task.routes';
+import dashboardRoutes from './routes/dashboard.routes';
+import aiRoutes from './routes/ai.routes';
 import { errorMiddleware } from './middleware/error.middleware';
 import { validateEnv } from './config/env';
 
@@ -35,6 +39,10 @@ app.get('/health', (_req, res) => {
 });
 
 app.use('/api/auth', authRoutes);
+app.use('/api/employees', employeeRoutes);
+app.use('/api/tasks', taskRoutes);
+app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/ai', aiRoutes);
 
 app.use(errorMiddleware);
 

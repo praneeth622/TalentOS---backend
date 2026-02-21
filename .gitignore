@@ -7,3 +7,4 @@ node_modules
 .nvmrc
 !.gitignore
 !.env.example
+*.md

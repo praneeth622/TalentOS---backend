@@ -15,5 +15,5 @@ export const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
  * Get the Gemini 1.5 Flash model instance
  */
 export const getGeminiModel = () => {
-  return genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+  return genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
 };

@@ -28,6 +28,7 @@ model Employee {
   name          String
   email         String
   role          String
+  department    String
   skills        String[]
   walletAddress String?
   createdAt     DateTime @default(now())
@@ -42,18 +43,19 @@ model Employee {
 }
 
 model Task {
-  id          String   @id @default(cuid())
-  orgId       String
-  employeeId  String
-  title       String
-  description String?
-  status      String   @default("TODO")
-  priority    String   @default("MEDIUM")
-  deadline    DateTime?
-  completedAt DateTime?
-  txHash      String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id            String   @id @default(cuid())
+  orgId         String
+  employeeId    String
+  title         String
+  description   String?
+  status        String   @default("TODO")
+  priority      String   @default("MEDIUM")
+  deadline      DateTime?
+  completedAt   DateTime?
+  txHash        String?
+  skillRequired String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   employee     Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
