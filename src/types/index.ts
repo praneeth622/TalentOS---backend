@@ -296,3 +296,13 @@ export interface SmartAssignResponse {
   recommendedEmployee: string;
   reason: string;
 }
+
+/**
+ * PDF skill extraction result
+ */
+export interface ExtractSkillsResult {
+  skills: string[];
+  name: string;
+  role: string;
+  summary: string;
+}

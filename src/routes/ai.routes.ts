@@ -3,6 +3,7 @@ import { z } from 'zod';
 import * as aiController from '../controllers/ai.controller';
 import { authMiddleware } from '../middleware/auth.middleware';
 import { validate } from '../middleware/validate.middleware';
+import { upload } from '../middleware/upload.middleware';
 
 const router = Router();
 
@@ -54,6 +55,19 @@ router.post(
   authMiddleware,
   validate(smartAssignSchema),
   aiController.smartAssign
+);
+
+/**
+ * POST /api/ai/extract-skills
+ * Parse a resume PDF and extract skills, name, role, and summary using Gemini
+ * Accepts multipart/form-data — field name: "resume", type: PDF, max 5MB
+ * No caching — each upload is processed fresh
+ */
+router.post(
+  '/extract-skills',
+  authMiddleware,
+  upload.single('resume'),
+  aiController.extractSkillsController
 );
 
 export default router;

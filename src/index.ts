@@ -29,10 +29,18 @@ app.use(express.urlencoded({ extended: true }));
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: 500,
   message: 'Too many requests from this IP, please try again later',
 });
 app.use('/api', limiter);
+
+// Stricter limit for AI routes to protect Gemini quota
+const aiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  message: 'AI rate limit reached, please try again later',
+});
+app.use('/api/ai', aiLimiter);
 
 app.get('/health', (_req, res) => {
   res.json({ success: true, message: 'TalentOS API is running' });

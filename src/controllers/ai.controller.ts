@@ -1,6 +1,7 @@
 import { Response, NextFunction } from 'express';
 import * as aiService from '../services/ai.service';
 import { AuthRequest, SuccessResponse } from '../types';
+import { AppError } from '../utils/AppError';
 
 /**
  * AI Chat controller
@@ -40,7 +41,8 @@ export const analyzeSkillGap = async (
 ): Promise<void> => {
   try {
     const orgId = req.org!.orgId;
-    const result = await aiService.analyzeSkillGap(orgId);
+    const forceRefresh = req.query.refresh === 'true';
+    const result = await aiService.analyzeSkillGap(orgId, forceRefresh);
 
     const response: SuccessResponse = {
       success: true,
@@ -65,7 +67,8 @@ export const getDailyInsight = async (
 ): Promise<void> => {
   try {
     const orgId = req.org!.orgId;
-    const result = await aiService.getDailyInsight(orgId);
+    const forceRefresh = req.query.refresh === 'true';
+    const result = await aiService.getDailyInsight(orgId, forceRefresh);
 
     const response: SuccessResponse = {
       success: true,
@@ -92,6 +95,34 @@ export const smartAssign = async (
     const data = req.body;
     const orgId = req.org!.orgId;
     const result = await aiService.smartAssign(data, orgId);
+
+    const response: SuccessResponse = {
+      success: true,
+      data: result,
+    };
+
+    res.status(200).json(response);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Extract skills from a resume PDF controller
+ * Accepts multipart/form-data with field "resume" (PDF only, max 5MB)
+ * Thin wrapper that passes the multer buffer to the AI service
+ */
+export const extractSkillsController = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    if (!req.file) {
+      throw new AppError('Please upload a PDF file', 400);
+    }
+
+    const result = await aiService.extractSkillsFromPDF(req.file.buffer);
 
     const response: SuccessResponse = {
       success: true,
