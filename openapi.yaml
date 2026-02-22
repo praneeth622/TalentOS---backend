@@ -1,0 +1,1603 @@
+openapi: 3.0.3
+info:
+  title: TalentOS API
+  description: |
+    **TalentOS** is an AI-powered workforce intelligence platform that combines employee management,
+    AI-driven productivity analytics, and Web3 task verification.
+
+    ## Authentication
+    TalentOS uses a **dual-role JWT system**:
+    - **Admin (Organization)** — registers at `/auth/register`, logs in at `/auth/login`. Can manage employees, tasks, and access org-wide analytics.
+    - **Employee** — credentials are auto-generated when an admin creates them. Logs in at `/auth/employee-login`. Can view own profile, tasks, and personal analytics.
+
+    Include the JWT token in every request:
+    ```
+    Authorization: Bearer <token>
+    ```
+
+    ## Role Guards
+    | Guard | Who can access |
+    |-------|---------------|
+    | **requireAdmin** | Organization admin only (no `employeeId` in JWT) |
+    | **requireEmployee** | Employee only (`employeeId` present in JWT) |
+    | **authMiddleware** | Any authenticated user (admin or employee) |
+
+    ## Rate Limiting
+    - **General endpoints**: 500 requests / 15 minutes
+    - **AI endpoints**: 30 requests / 15 minutes
+
+    ## Response Format
+    All responses follow a consistent envelope:
+    ```json
+    {
+      "success": true,
+      "data": { ... },
+      "message": "Optional success message"
+    }
+    ```
+    Error responses:
+    ```json
+    {
+      "success": false,
+      "error": "Error description",
+      "statusCode": 400
+    }
+    ```
+  version: 1.0.0
+  contact:
+    name: TalentOS Team
+    url: https://talentos.praneethd.xyz
+
+servers:
+  - url: https://talentos-backend.onrender.com/api
+    description: Production
+
+tags:
+  - name: Auth
+    description: Organization registration, login, and employee authentication
+  - name: Employees
+    description: Employee CRUD operations and self-service endpoints
+  - name: Tasks
+    description: Task management, status updates, and Web3 verification
+  - name: Dashboard
+    description: Analytics, leaderboard, and activity feed
+  - name: AI
+    description: AI-powered insights, skill analysis, and smart recommendations
+
+paths:
+  # ─── AUTH ────────────────────────────────────────────────
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a new organization
+      description: Creates a new organization account and returns a JWT token. No authentication required.
+      operationId: registerOrganization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password]
+              properties:
+                name:
+                  type: string
+                  minLength: 2
+                  example: Acme Corp
+                email:
+                  type: string
+                  format: email
+                  example: admin@acmecorp.com
+                password:
+                  type: string
+                  minLength: 8
+                  example: SecurePass123
+            example:
+              name: Acme Corp
+              email: admin@acmecorp.com
+              password: SecurePass123
+      responses:
+        "201":
+          description: Organization registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+              example:
+                success: true
+                data:
+                  token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+                  organization:
+                    id: cm5abc123def456
+                    name: Acme Corp
+                    email: admin@acmecorp.com
+                message: Organization registered successfully
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "409":
+          description: Email already registered
+          content:
+            application/json:
+              example:
+                success: false
+                error: Organization with this email already exists
+                statusCode: 409
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Login as organization admin
+      description: Authenticates an organization admin and returns a JWT token (without `employeeId`).
+      operationId: loginAdmin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: admin@acmecorp.com
+                password:
+                  type: string
+                  example: SecurePass123
+            example:
+              email: admin@acmecorp.com
+              password: SecurePass123
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+              example:
+                success: true
+                data:
+                  token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+                  organization:
+                    id: cm5abc123def456
+                    name: Acme Corp
+                    email: admin@acmecorp.com
+                message: Login successful
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              example:
+                success: false
+                error: Invalid email or password
+                statusCode: 401
+
+  /auth/employee-login:
+    post:
+      tags: [Auth]
+      summary: Login as employee
+      description: |
+        Authenticates an employee and returns a JWT token that includes `employeeId` and `roleType`.
+        Employee credentials are auto-generated when an admin creates the employee — the password is sent via welcome email.
+      operationId: loginEmployee
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: emp1@org.com
+                password:
+                  type: string
+                  example: aB3xK9mP
+            example:
+              email: emp1@org.com
+              password: aB3xK9mP
+      responses:
+        "200":
+          description: Employee login successful
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+                  employee:
+                    id: cm5emp001
+                    name: Jane Smith
+                    email: emp1@org.com
+                    role: Frontend Engineer
+                    department: Engineering
+                message: Employee login successful
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              example:
+                success: false
+                error: Invalid email or password
+                statusCode: 401
+
+  /auth/change-password:
+    post:
+      tags: [Auth]
+      summary: Change employee password
+      description: Allows an authenticated employee to change their password. Requires the current password for verification.
+      operationId: changePassword
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currentPassword, newPassword]
+              properties:
+                currentPassword:
+                  type: string
+                  example: aB3xK9mP
+                newPassword:
+                  type: string
+                  minLength: 8
+                  example: MyNewSecurePass1
+            example:
+              currentPassword: aB3xK9mP
+              newPassword: MyNewSecurePass1
+      responses:
+        "200":
+          description: Password changed successfully
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: cm5emp001
+                  name: Jane Smith
+                  email: emp1@org.com
+                message: Password changed successfully
+        "401":
+          description: Current password is incorrect
+          content:
+            application/json:
+              example:
+                success: false
+                error: Current password is incorrect
+                statusCode: 401
+        "403":
+          description: Not an employee (admin tried to use this endpoint)
+          content:
+            application/json:
+              example:
+                success: false
+                error: Employee access required
+                statusCode: 403
+
+  # ─── EMPLOYEES ───────────────────────────────────────────
+  /employees:
+    get:
+      tags: [Employees]
+      summary: List all employees
+      description: Returns all employees in the organization. **Admin only.**
+      operationId: listEmployees
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: List of employees
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  - id: cm5emp001
+                    orgId: cm5abc123def456
+                    name: Jane Smith
+                    email: emp1@org.com
+                    role: Frontend Engineer
+                    department: Engineering
+                    skills: [React, TypeScript, Tailwind CSS]
+                    walletAddress: "0x742d35Cc6634C0532925a3b844Bc9e7595f2bD38"
+                    roleType: EMPLOYEE
+                    isActive: true
+                    createdAt: "2026-02-20T10:30:00.000Z"
+                    updatedAt: "2026-02-20T10:30:00.000Z"
+                  - id: cm5emp002
+                    orgId: cm5abc123def456
+                    name: Bob Johnson
+                    email: emp2@org.com
+                    role: Backend Engineer
+                    department: Engineering
+                    skills: [Node.js, PostgreSQL, Docker]
+                    walletAddress: null
+                    roleType: EMPLOYEE
+                    isActive: true
+                    createdAt: "2026-02-20T10:35:00.000Z"
+                    updatedAt: "2026-02-20T10:35:00.000Z"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/AdminOnly"
+
+    post:
+      tags: [Employees]
+      summary: Create a new employee
+      description: |
+        Creates a new employee in the organization. **Admin only.**
+        - A random password is auto-generated and hashed
+        - A welcome email is sent with login credentials (if Resend is configured)
+        - The employee can then log in at `/auth/employee-login`
+      operationId: createEmployee
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateEmployeeRequest"
+            example:
+              name: Jane Smith
+              email: emp1@org.com
+              role: Frontend Engineer
+              department: Engineering
+              skills: [React, TypeScript, Tailwind CSS]
+              walletAddress: "0x742d35Cc6634C0532925a3b844Bc9e7595f2bD38"
+      responses:
+        "201":
+          description: Employee created successfully
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: cm5emp001
+                  orgId: cm5abc123def456
+                  name: Jane Smith
+                  email: emp1@org.com
+                  role: Frontend Engineer
+                  department: Engineering
+                  skills: [React, TypeScript, Tailwind CSS]
+                  walletAddress: "0x742d35Cc6634C0532925a3b844Bc9e7595f2bD38"
+                  roleType: EMPLOYEE
+                  isActive: true
+                  createdAt: "2026-02-20T10:30:00.000Z"
+                  updatedAt: "2026-02-20T10:30:00.000Z"
+                message: Employee created successfully
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "409":
+          description: Duplicate email within organization
+          content:
+            application/json:
+              example:
+                success: false
+                error: Email already exists in organization
+                statusCode: 409
+
+  /employees/me:
+    get:
+      tags: [Employees]
+      summary: Get my profile
+      description: Returns the authenticated employee's own profile with their tasks. **Employee only.**
+      operationId: getMyProfile
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Employee profile with tasks
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: cm5emp001
+                  name: Jane Smith
+                  email: emp1@org.com
+                  role: Frontend Engineer
+                  department: Engineering
+                  skills: [React, TypeScript, Tailwind CSS]
+                  walletAddress: "0x742d35Cc6634C0532925a3b844Bc9e7595f2bD38"
+                  roleType: EMPLOYEE
+                  isActive: true
+                  createdAt: "2026-02-20T10:30:00.000Z"
+                  tasks:
+                    - id: cm5task001
+                      title: Build Dashboard UI
+                      status: IN_PROGRESS
+                      priority: HIGH
+                      deadline: "2026-03-01T00:00:00.000Z"
+                      completedAt: null
+                      txHash: null
+                      createdAt: "2026-02-21T09:00:00.000Z"
+        "403":
+          $ref: "#/components/responses/EmployeeOnly"
+
+  /employees/me/score:
+    get:
+      tags: [Employees]
+      summary: Get my productivity score
+      description: Returns the authenticated employee's own productivity score with breakdown. **Employee only.**
+      operationId: getMyScore
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Productivity score
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  employeeId: cm5emp001
+                  employeeName: Jane Smith
+                  finalScore: 78.5
+                  completionRate: 75.0
+                  deadlineScore: 85.0
+                  priorityScore: 80.0
+                  breakdown:
+                    totalTasks: 8
+                    completedTasks: 6
+                    onTimeTasks: 5
+                    overdueTasks: 1
+                    highPriorityCompleted: 3
+                    highPriorityTotal: 4
+        "403":
+          $ref: "#/components/responses/EmployeeOnly"
+
+  /employees/{id}:
+    get:
+      tags: [Employees]
+      summary: Get employee by ID
+      description: Returns a single employee with their tasks. **Admin only.**
+      operationId: getEmployeeById
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+      responses:
+        "200":
+          description: Employee with tasks
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: cm5emp001
+                  orgId: cm5abc123def456
+                  name: Jane Smith
+                  email: emp1@org.com
+                  role: Frontend Engineer
+                  department: Engineering
+                  skills: [React, TypeScript, Tailwind CSS]
+                  walletAddress: "0x742d35Cc6634C0532925a3b844Bc9e7595f2bD38"
+                  roleType: EMPLOYEE
+                  isActive: true
+                  createdAt: "2026-02-20T10:30:00.000Z"
+                  updatedAt: "2026-02-20T10:30:00.000Z"
+                  tasks:
+                    - id: cm5task001
+                      title: Build Dashboard UI
+                      description: Create responsive dashboard with charts
+                      status: IN_PROGRESS
+                      priority: HIGH
+                      deadline: "2026-03-01T00:00:00.000Z"
+                      completedAt: null
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    put:
+      tags: [Employees]
+      summary: Update employee
+      description: Updates an employee's details. All fields are optional. **Admin only.**
+      operationId: updateEmployee
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateEmployeeRequest"
+            example:
+              name: Jane Smith-Updated
+              skills: [React, TypeScript, Tailwind CSS, Next.js]
+              walletAddress: "0xNewWalletAddress123"
+      responses:
+        "200":
+          description: Employee updated successfully
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: cm5emp001
+                  name: Jane Smith-Updated
+                  email: emp1@org.com
+                  role: Frontend Engineer
+                  department: Engineering
+                  skills: [React, TypeScript, Tailwind CSS, Next.js]
+                  walletAddress: "0xNewWalletAddress123"
+                  roleType: EMPLOYEE
+                  isActive: true
+                message: Employee updated successfully
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Duplicate email
+          content:
+            application/json:
+              example:
+                success: false
+                error: Email already exists in organization
+                statusCode: 409
+
+    delete:
+      tags: [Employees]
+      summary: Delete employee
+      description: |
+        Permanently deletes an employee and **all their tasks** (cascade delete). **Admin only.**
+        Consider deactivating instead by setting `isActive: false` via the update endpoint.
+      operationId: deleteEmployee
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+      responses:
+        "200":
+          description: Employee deleted
+          content:
+            application/json:
+              example:
+                success: true
+                data: null
+                message: Employee deleted successfully
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /employees/{id}/score:
+    get:
+      tags: [Employees]
+      summary: Get employee productivity score
+      description: |
+        Returns an employee's productivity score with full breakdown. **Admin only.**
+
+        **Scoring formula:**
+        - Completion Rate (40%): `(completed / total) * 40`
+        - Deadline Adherence (35%): `(onTime / completed) * 35`
+        - Priority Score (25%): `(highPriorityCompleted / highPriorityTotal) * 25`
+      operationId: getEmployeeScore
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/EmployeeId"
+      responses:
+        "200":
+          description: Productivity score with breakdown
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  employeeId: cm5emp001
+                  finalScore: 78.5
+                  completionRate: 75.0
+                  deadlineScore: 85.0
+                  priorityScore: 80.0
+                  breakdown:
+                    totalTasks: 8
+                    completedTasks: 6
+                    onTimeTasks: 5
+                    overdueTasks: 1
+                    highPriorityCompleted: 3
+                    highPriorityTotal: 4
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ─── TASKS ──────────────────────────────────────────────
+  /tasks:
+    get:
+      tags: [Tasks]
+      summary: List all tasks
+      description: Returns all tasks in the organization with optional filters. **Admin only.**
+      operationId: listTasks
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: employeeId
+          in: query
+          description: Filter by employee ID
+          schema:
+            type: string
+          example: cm5emp001
+        - name: status
+          in: query
+          description: Filter by task status
+          schema:
+            type: string
+            enum: [TODO, IN_PROGRESS, COMPLETED]
+          example: IN_PROGRESS
+      responses:
+        "200":
+          description: List of tasks
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  - id: cm5task001
+                    orgId: cm5abc123def456
+                    employeeId: cm5emp001
+                    title: Build Dashboard UI
+                    description: Create responsive dashboard with charts
+                    status: IN_PROGRESS
+                    priority: HIGH
+                    deadline: "2026-03-01T00:00:00.000Z"
+                    completedAt: null
+                    txHash: null
+                    skillRequired: React
+                    createdAt: "2026-02-21T09:00:00.000Z"
+                    updatedAt: "2026-02-21T09:00:00.000Z"
+                    employee:
+                      id: cm5emp001
+                      name: Jane Smith
+                      email: emp1@org.com
+                      role: Frontend Engineer
+        "403":
+          $ref: "#/components/responses/AdminOnly"
+
+    post:
+      tags: [Tasks]
+      summary: Create a new task
+      description: Creates a new task assigned to an employee. Initial status is `TODO`. **Admin only.**
+      operationId: createTask
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTaskRequest"
+            example:
+              title: Build Dashboard UI
+              description: Create responsive dashboard with charts and analytics
+              employeeId: cm5emp001
+              priority: HIGH
+              deadline: "2026-03-01T00:00:00.000Z"
+              skillRequired: React
+      responses:
+        "201":
+          description: Task created successfully
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: cm5task001
+                  orgId: cm5abc123def456
+                  employeeId: cm5emp001
+                  title: Build Dashboard UI
+                  description: Create responsive dashboard with charts and analytics
+                  status: TODO
+                  priority: HIGH
+                  deadline: "2026-03-01T00:00:00.000Z"
+                  completedAt: null
+                  txHash: null
+                  skillRequired: React
+                  createdAt: "2026-02-21T09:00:00.000Z"
+                  updatedAt: "2026-02-21T09:00:00.000Z"
+                message: Task created successfully
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "404":
+          description: Employee not found
+          content:
+            application/json:
+              example:
+                success: false
+                error: Employee not found
+                statusCode: 404
+
+  /tasks/my-tasks:
+    get:
+      tags: [Tasks]
+      summary: Get my tasks
+      description: Returns all tasks assigned to the authenticated employee. **Employee only.** Automatically scoped — no filters needed.
+      operationId: getMyTasks
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: List of employee's own tasks
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  - id: cm5task001
+                    orgId: cm5abc123def456
+                    employeeId: cm5emp001
+                    title: Build Dashboard UI
+                    description: Create responsive dashboard with charts
+                    status: IN_PROGRESS
+                    priority: HIGH
+                    deadline: "2026-03-01T00:00:00.000Z"
+                    completedAt: null
+                    txHash: null
+                    skillRequired: React
+                    createdAt: "2026-02-21T09:00:00.000Z"
+                    updatedAt: "2026-02-22T14:00:00.000Z"
+                  - id: cm5task002
+                    title: Write Unit Tests
+                    status: TODO
+                    priority: MEDIUM
+                    deadline: "2026-03-10T00:00:00.000Z"
+                    completedAt: null
+                    txHash: null
+                    skillRequired: Jest
+        "403":
+          $ref: "#/components/responses/EmployeeOnly"
+
+  /tasks/{id}:
+    get:
+      tags: [Tasks]
+      summary: Get task by ID
+      description: Returns a single task with employee details. **Admin only.**
+      operationId: getTaskById
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TaskId"
+      responses:
+        "200":
+          description: Task with employee details
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: cm5task001
+                  orgId: cm5abc123def456
+                  employeeId: cm5emp001
+                  title: Build Dashboard UI
+                  description: Create responsive dashboard with charts
+                  status: IN_PROGRESS
+                  priority: HIGH
+                  deadline: "2026-03-01T00:00:00.000Z"
+                  completedAt: null
+                  txHash: null
+                  skillRequired: React
+                  employee:
+                    id: cm5emp001
+                    name: Jane Smith
+                    email: emp1@org.com
+                    role: Frontend Engineer
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    put:
+      tags: [Tasks]
+      summary: Update task
+      description: Updates task details. All fields optional. Use the dedicated `/status` endpoint for status changes. **Admin only.**
+      operationId: updateTask
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TaskId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTaskRequest"
+            example:
+              title: Build Dashboard UI v2
+              priority: HIGH
+              deadline: "2026-03-15T00:00:00.000Z"
+      responses:
+        "200":
+          description: Task updated
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: cm5task001
+                  title: Build Dashboard UI v2
+                  priority: HIGH
+                  deadline: "2026-03-15T00:00:00.000Z"
+                  status: IN_PROGRESS
+                message: Task updated successfully
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    delete:
+      tags: [Tasks]
+      summary: Delete task
+      description: Permanently deletes a task. This action cannot be undone. **Admin only.**
+      operationId: deleteTask
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TaskId"
+      responses:
+        "200":
+          description: Task deleted
+          content:
+            application/json:
+              example:
+                success: true
+                data: null
+                message: Task deleted successfully
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /tasks/{id}/status:
+    patch:
+      tags: [Tasks]
+      summary: Update task status
+      description: |
+        Updates a task's status. **Both admins and employees** can use this endpoint.
+
+        **Ownership rule**: Employees can only update their own tasks. Admins can update any task.
+
+        When status changes to `COMPLETED`, `completedAt` is automatically set.
+        When status changes away from `COMPLETED`, `completedAt` is cleared.
+      operationId: updateTaskStatus
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TaskId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [TODO, IN_PROGRESS, COMPLETED]
+            example:
+              status: COMPLETED
+      responses:
+        "200":
+          description: Status updated
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: cm5task001
+                  title: Build Dashboard UI
+                  status: COMPLETED
+                  completedAt: "2026-02-25T16:30:00.000Z"
+                message: Task status updated successfully
+        "403":
+          description: Ownership violation
+          content:
+            application/json:
+              example:
+                success: false
+                error: You can only update your own tasks
+                statusCode: 403
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /tasks/{id}/txhash:
+    patch:
+      tags: [Tasks]
+      summary: Update task transaction hash
+      description: |
+        Stores a Web3 transaction hash for blockchain verification of task completion.
+        **Both admins and employees** can use this endpoint.
+
+        **Ownership rule**: Employees can only update their own tasks.
+      operationId: updateTaskTxHash
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TaskId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [txHash]
+              properties:
+                txHash:
+                  type: string
+                  description: Blockchain transaction hash from MetaMask signature
+            example:
+              txHash: "0x8a4c1e2f3b5d6c7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d"
+      responses:
+        "200":
+          description: Transaction hash saved
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  id: cm5task001
+                  title: Build Dashboard UI
+                  status: COMPLETED
+                  txHash: "0x8a4c1e2f3b5d6c7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d"
+                message: Task verification hash updated successfully
+        "403":
+          description: Ownership violation
+          content:
+            application/json:
+              example:
+                success: false
+                error: You can only update your own tasks
+                statusCode: 403
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ─── DASHBOARD ──────────────────────────────────────────
+  /dashboard/stats:
+    get:
+      tags: [Dashboard]
+      summary: Get dashboard statistics
+      description: |
+        Returns dashboard stats. **Response differs by role:**
+        - **Admin** gets org-wide stats (totalEmployees, activeEmployees, assignedTasks, completedTasks)
+        - **Employee** gets personal stats (assignedTasks, inProgressTasks, completedTasks, productivityScore, recentActivity)
+      operationId: getDashboardStats
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Dashboard statistics (shape depends on role)
+          content:
+            application/json:
+              examples:
+                admin:
+                  summary: Admin response
+                  value:
+                    success: true
+                    data:
+                      totalEmployees: 12
+                      activeEmployees: 10
+                      assignedTasks: 45
+                      completedTasks: 32
+                employee:
+                  summary: Employee response
+                  value:
+                    success: true
+                    data:
+                      assignedTasks: 8
+                      inProgressTasks: 3
+                      completedTasks: 4
+                      totalTasks: 8
+                      productivityScore: 78.5
+                      recentActivity:
+                        - id: cm5task001
+                          title: Build Dashboard UI
+                          status: COMPLETED
+                          priority: HIGH
+                          updatedAt: "2026-02-25T16:30:00.000Z"
+
+  /dashboard/leaderboard:
+    get:
+      tags: [Dashboard]
+      summary: Get productivity leaderboard
+      description: Returns the top 5 employees ranked by productivity score. **Admin only.**
+      operationId: getLeaderboard
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Top 5 employees by productivity score
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  - id: cm5emp001
+                    name: Jane Smith
+                    email: emp1@org.com
+                    role: Frontend Engineer
+                    department: Engineering
+                    productivityScore: 92.5
+                    completedTasks: 18
+                    totalTasks: 20
+                  - id: cm5emp002
+                    name: Bob Johnson
+                    email: emp2@org.com
+                    role: Backend Engineer
+                    department: Engineering
+                    productivityScore: 85.0
+                    completedTasks: 12
+                    totalTasks: 15
+                  - id: cm5emp003
+                    name: Alice Chen
+                    email: emp3@org.com
+                    role: Designer
+                    department: Design
+                    productivityScore: 80.0
+                    completedTasks: 10
+                    totalTasks: 13
+        "403":
+          $ref: "#/components/responses/AdminOnly"
+
+  /dashboard/activity:
+    get:
+      tags: [Dashboard]
+      summary: Get recent activity
+      description: |
+        Returns recent task activity. **Response differs by role:**
+        - **Admin** sees last 10 tasks across all employees
+        - **Employee** sees last 10 of their own tasks
+      operationId: getRecentActivity
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Recent activity feed
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  - id: cm5task001
+                    title: Build Dashboard UI
+                    status: COMPLETED
+                    priority: HIGH
+                    updatedAt: "2026-02-25T16:30:00.000Z"
+                    employeeName: Jane Smith
+                    employeeId: cm5emp001
+                  - id: cm5task002
+                    title: Write API Tests
+                    status: IN_PROGRESS
+                    priority: MEDIUM
+                    updatedAt: "2026-02-25T14:15:00.000Z"
+                    employeeName: Bob Johnson
+                    employeeId: cm5emp002
+
+  # ─── AI ─────────────────────────────────────────────────
+  /ai/chat:
+    post:
+      tags: [AI]
+      summary: AI HR assistant chat
+      description: |
+        Ask natural-language questions about your team, employees, tasks, and organization.
+        Uses Google Gemini with full org context. **Admin only.** Rate limited to 30 req/15min.
+      operationId: aiChat
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [question]
+              properties:
+                question:
+                  type: string
+                  minLength: 5
+            example:
+              question: Who are our top performers this month and what tasks did they complete?
+      responses:
+        "200":
+          description: AI-generated answer
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  answer: "Based on your organization's data, your top performers this month are:\n\n1. **Jane Smith** (Frontend Engineer) - Completed 6 out of 8 tasks with a 92.5% productivity score. Notable completions include the Dashboard UI and Design System implementation.\n\n2. **Bob Johnson** (Backend Engineer) - Completed 5 out of 6 tasks with 85% productivity. Key deliverables were the REST API and database optimization.\n\nRecommendation: Consider recognizing their contributions in the next team meeting."
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /ai/skill-gap:
+    get:
+      tags: [AI]
+      summary: Organization skill gap analysis
+      description: |
+        Analyzes skill gaps across all employees in the organization.
+        Returns missing skills per employee and org-wide recommendations.
+        **Admin only.** Cached for 24 hours (use `?refresh=true` to force refresh).
+      operationId: analyzeSkillGap
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: refresh
+          in: query
+          description: Set to `true` to bypass the 24-hour cache
+          schema:
+            type: string
+            enum: ["true"]
+      responses:
+        "200":
+          description: Skill gap analysis
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  gaps:
+                    - employeeName: Jane Smith
+                      role: Frontend Engineer
+                      missingSkills: [Testing, CI/CD, GraphQL]
+                    - employeeName: Bob Johnson
+                      role: Backend Engineer
+                      missingSkills: [Kubernetes, AWS, Terraform]
+                  orgRecommendation: "Your team has strong frontend and backend fundamentals but lacks DevOps and cloud infrastructure skills. Consider organizing a 2-week training sprint on Docker, Kubernetes, and CI/CD pipelines."
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /ai/skill-gap/me:
+    get:
+      tags: [AI]
+      summary: My personal skill gap analysis
+      description: |
+        Returns the authenticated employee's personal skill gap analysis with a 30-day learning plan.
+        **Employee only.** Cached for 24 hours per employee.
+      operationId: analyzeMySkillGap
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: refresh
+          in: query
+          description: Set to `true` to bypass cache
+          schema:
+            type: string
+            enum: ["true"]
+      responses:
+        "200":
+          description: Personal skill gap with learning plan
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  missingSkills: [Docker, CI/CD, Terraform]
+                  coveragePercent: 65
+                  learningPlan:
+                    - "Week 1-2: Docker fundamentals — containers, images, docker-compose"
+                    - "Week 3-4: CI/CD pipelines — GitHub Actions, automated testing"
+                    - "Week 5-6: Terraform basics — infrastructure as code, state management"
+                    - "Week 7-8: Integration project — combine Docker + CI/CD + Terraform"
+        "403":
+          $ref: "#/components/responses/EmployeeOnly"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /ai/daily-insight:
+    get:
+      tags: [AI]
+      summary: Get daily AI insight
+      description: |
+        Returns an AI-generated daily insight based on organization performance data.
+        Provides actionable recommendations. **Admin only.** Cached for 24 hours.
+      operationId: getDailyInsight
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: refresh
+          in: query
+          description: Set to `true` to bypass cache
+          schema:
+            type: string
+            enum: ["true"]
+      responses:
+        "200":
+          description: Daily insight
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  insight: "Your team completed 72% of assigned tasks this week — up 8% from last week. The Engineering department leads with 85% completion. However, 3 high-priority tasks are overdue in the Design department. Recommendation: Schedule a quick sync with the Design team to unblock their deliverables and consider redistributing workload."
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /ai/smart-assign:
+    post:
+      tags: [AI]
+      summary: Smart task assignment recommendation
+      description: |
+        Gets an AI recommendation for the best employee to assign a task to,
+        based on skills match and current workload. **Admin only.**
+      operationId: smartAssign
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [taskTitle, skillRequired]
+              properties:
+                taskTitle:
+                  type: string
+                  minLength: 3
+                skillRequired:
+                  type: string
+                  minLength: 2
+            example:
+              taskTitle: Build real-time notification system
+              skillRequired: Node.js
+      responses:
+        "200":
+          description: AI recommendation
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  recommendedEmployee: Bob Johnson
+                  reason: "Bob Johnson has 'Node.js' in his skill set and currently has only 2 open tasks (lowest on the team). His completion rate of 95% indicates high reliability. He also has experience with WebSocket from previous tasks, making him ideal for real-time features."
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /ai/extract-skills:
+    post:
+      tags: [AI]
+      summary: Extract skills from resume PDF
+      description: |
+        Upload a PDF resume and extract skills, name, role, and a professional summary using AI.
+        Accepts `multipart/form-data` with a `resume` field. Max file size: 5 MB. **Any authenticated user.**
+      operationId: extractSkills
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [resume]
+              properties:
+                resume:
+                  type: string
+                  format: binary
+                  description: PDF file (max 5 MB)
+      responses:
+        "200":
+          description: Extracted skills
+          content:
+            application/json:
+              example:
+                success: true
+                data:
+                  skills:
+                    - TypeScript
+                    - React.js
+                    - Node.js
+                    - PostgreSQL
+                    - Docker
+                    - AWS
+                    - REST APIs
+                    - GraphQL
+                    - Git
+                    - Agile
+                  name: Jane Smith
+                  role: Senior Full Stack Developer
+                  summary: Experienced full-stack developer with 5+ years building scalable web applications using TypeScript, React, and Node.js.
+        "400":
+          description: No file or unreadable PDF
+          content:
+            application/json:
+              examples:
+                noFile:
+                  summary: No file uploaded
+                  value:
+                    success: false
+                    error: Please upload a PDF file
+                    statusCode: 400
+                unreadable:
+                  summary: Unreadable PDF
+                  value:
+                    success: false
+                    error: Could not extract text from PDF. Please ensure the PDF contains readable text.
+                    statusCode: 400
+
+# ─── COMPONENTS ─────────────────────────────────────────
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT token obtained from `/auth/register`, `/auth/login`, or `/auth/employee-login`.
+        Admin tokens do NOT contain `employeeId`. Employee tokens DO contain `employeeId`.
+
+  parameters:
+    EmployeeId:
+      name: id
+      in: path
+      required: true
+      description: Employee CUID
+      schema:
+        type: string
+      example: cm5emp001
+
+    TaskId:
+      name: id
+      in: path
+      required: true
+      description: Task CUID
+      schema:
+        type: string
+      example: cm5task001
+
+  schemas:
+    CreateEmployeeRequest:
+      type: object
+      required: [name, email, role, department]
+      properties:
+        name:
+          type: string
+          minLength: 2
+          description: Employee full name
+        email:
+          type: string
+          format: email
+          description: Must be unique within the organization
+        role:
+          type: string
+          minLength: 2
+          description: Job title / role
+        department:
+          type: string
+          minLength: 2
+          description: Department name
+        skills:
+          type: array
+          items:
+            type: string
+          default: []
+          description: Array of skill strings
+        walletAddress:
+          type: string
+          nullable: true
+          description: Ethereum wallet address for Web3 verification
+
+    UpdateEmployeeRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 2
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          minLength: 2
+        department:
+          type: string
+          minLength: 2
+        skills:
+          type: array
+          items:
+            type: string
+        walletAddress:
+          type: string
+          nullable: true
+        isActive:
+          type: boolean
+          description: Set to false to deactivate employee
+
+    CreateTaskRequest:
+      type: object
+      required: [title, employeeId]
+      properties:
+        title:
+          type: string
+          minLength: 3
+          description: Task title
+        description:
+          type: string
+          nullable: true
+          description: Optional task description
+        employeeId:
+          type: string
+          description: ID of the employee to assign the task to
+        priority:
+          type: string
+          enum: [LOW, MEDIUM, HIGH]
+          default: MEDIUM
+        deadline:
+          type: string
+          format: date-time
+          nullable: true
+          description: ISO 8601 datetime
+        skillRequired:
+          type: string
+          nullable: true
+          description: Primary skill needed for this task
+
+    UpdateTaskRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 3
+        description:
+          type: string
+          nullable: true
+        employeeId:
+          type: string
+        priority:
+          type: string
+          enum: [LOW, MEDIUM, HIGH]
+        deadline:
+          type: string
+          format: date-time
+          nullable: true
+        skillRequired:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [TODO, IN_PROGRESS, COMPLETED]
+
+    AuthResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        data:
+          type: object
+          properties:
+            token:
+              type: string
+              description: JWT token
+            organization:
+              type: object
+              properties:
+                id:
+                  type: string
+                name:
+                  type: string
+                email:
+                  type: string
+        message:
+          type: string
+
+    Employee:
+      type: object
+      properties:
+        id:
+          type: string
+        orgId:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+        department:
+          type: string
+        skills:
+          type: array
+          items:
+            type: string
+        walletAddress:
+          type: string
+          nullable: true
+        roleType:
+          type: string
+          enum: [EMPLOYEE]
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    Task:
+      type: object
+      properties:
+        id:
+          type: string
+        orgId:
+          type: string
+        employeeId:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [TODO, IN_PROGRESS, COMPLETED]
+        priority:
+          type: string
+          enum: [LOW, MEDIUM, HIGH]
+        deadline:
+          type: string
+          format: date-time
+          nullable: true
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+        txHash:
+          type: string
+          nullable: true
+        skillRequired:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+  responses:
+    ValidationError:
+      description: Validation error
+      content:
+        application/json:
+          example:
+            success: false
+            error: "Validation failed: name must be at least 2 characters"
+            statusCode: 400
+
+    Unauthorized:
+      description: Missing or invalid token
+      content:
+        application/json:
+          example:
+            success: false
+            error: No token provided
+            statusCode: 401
+
+    AdminOnly:
+      description: Admin access required
+      content:
+        application/json:
+          example:
+            success: false
+            error: Admin access required
+            statusCode: 403
+
+    EmployeeOnly:
+      description: Employee access required
+      content:
+        application/json:
+          example:
+            success: false
+            error: Employee access required
+            statusCode: 403
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          example:
+            success: false
+            error: Resource not found
+            statusCode: 404
+
+    RateLimited:
+      description: Too many requests
+      content:
+        application/json:
+          example:
+            success: false
+            error: Too many requests, please try again later
+            statusCode: 429

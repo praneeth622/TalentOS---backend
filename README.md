@@ -1,6 +1,19 @@
 # TalentOS Backend
 
-Backend API for TalentOS workforce intelligence platform.
+AI-powered workforce intelligence API with dual-role authentication, productivity analytics, and Web3 task verification.
+
+**Production URL:** https://talentos-backend.onrender.com
+
+## Tech Stack
+
+- **Runtime:** Node.js 24 + Express 5
+- **Language:** TypeScript
+- **Database:** PostgreSQL + Prisma ORM
+- **AI:** Google Gemini 1.5 Flash
+- **Email:** Resend
+- **Auth:** JWT (dual-role: admin + employee)
+- **Validation:** Zod
+- **Web3:** Polygon Amoy (txHash verification)
 
 ## Setup
 
@@ -23,55 +36,148 @@ npm run dev
 
 ## Environment Variables
 
-Copy `.env.example` and create `.env` with:
-- `DATABASE_URL` - PostgreSQL connection string
-- `JWT_SECRET` - Secret key for JWT tokens
-- `GEMINI_API_KEY` - Google Gemini API key
-- `PORT` - Server port (default: 5000)
-- `FRONTEND_URL` - Frontend URL for CORS
-- `NODE_ENV` - Environment (development/production)
+Create a `.env` file in the backend root:
+
+```env
+# Required
+DATABASE_URL="postgresql://user:pass@localhost:5432/talentos"
+JWT_SECRET="your-secret-key"
+GEMINI_API_KEY="your-gemini-api-key"
+
+# Optional
+PORT=5000
+NODE_ENV=development
+FRONTEND_URL="http://localhost:3000"
+RESEND_API_KEY="re_xxxxxxxx"
+RESEND_FROM_EMAIL="TalentOS <noreply@yourdomain.com>"
+```
 
 ## Architecture
 
-**Strict 3-Layer Pattern:**
-1. **Routes** - Define endpoints, attach middleware
-2. **Controllers** - Parse request, call service, return response
-3. **Services** - ALL business logic and database queries
+**Strict 3-layer pattern:**
 
-## API Endpoints
-
-### Auth
-- `POST /api/auth/register` - Register new organization
-- `POST /api/auth/login` - Login organization
+```
+Routes → Controllers → Services → Prisma (DB)
+  │
+  ├── middleware/auth.middleware.ts      → JWT verification
+  ├── middleware/requireAdmin.middleware  → Admin-only guard
+  ├── middleware/requireEmployee.middleware → Employee-only guard
+  ├── middleware/validate.middleware.ts   → Zod schema validation
+  └── middleware/upload.middleware.ts     → PDF file upload (multer)
+```
 
 ## Project Structure
 
 ```
 backend/
 ├── src/
-│   ├── config/          # Environment validation
+│   ├── config/          # Environment validation (Zod)
 │   ├── controllers/     # HTTP request handlers
 │   ├── services/        # Business logic + DB queries
-│   ├── routes/          # Route definitions
-│   ├── middleware/      # Auth, validation, error handling
+│   ├── routes/          # Route definitions + middleware chains
+│   ├── middleware/       # Auth, validation, role guards, error handling
 │   ├── lib/             # Singletons (Prisma, Gemini)
 │   ├── types/           # TypeScript interfaces
 │   ├── utils/           # Helper functions
 │   └── index.ts         # Express app entry point
 ├── prisma/
-│   └── schema.prisma    # Database schema
+│   └── schema.prisma    # Database schema (Organization, Employee, Task, AiCache)
+├── docs/
+│   └── API_REFERENCE.md # Detailed API documentation with examples
+├── openapi.yaml         # OpenAPI 3.0 specification (26 endpoints)
 └── package.json
 ```
 
-## Development
+## API Endpoints (26 total)
+
+### Auth (4 endpoints)
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/api/auth/register` | None | Register organization |
+| POST | `/api/auth/login` | None | Admin login |
+| POST | `/api/auth/employee-login` | None | Employee login |
+| POST | `/api/auth/change-password` | Employee | Change password |
+
+### Employees (8 endpoints)
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/employees` | Admin | List all employees |
+| POST | `/api/employees` | Admin | Create employee (auto-generates password + sends email) |
+| GET | `/api/employees/me` | Employee | Get own profile with tasks |
+| GET | `/api/employees/me/score` | Employee | Get own productivity score |
+| GET | `/api/employees/:id` | Admin | Get employee by ID with tasks |
+| PUT | `/api/employees/:id` | Admin | Update employee |
+| DELETE | `/api/employees/:id` | Admin | Delete employee (cascades tasks) |
+| GET | `/api/employees/:id/score` | Admin | Get employee productivity score |
+
+### Tasks (8 endpoints)
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/tasks` | Admin | List all tasks (filterable) |
+| POST | `/api/tasks` | Admin | Create task |
+| GET | `/api/tasks/my-tasks` | Employee | Get own tasks |
+| GET | `/api/tasks/:id` | Admin | Get task by ID |
+| PUT | `/api/tasks/:id` | Admin | Update task |
+| DELETE | `/api/tasks/:id` | Admin | Delete task |
+| PATCH | `/api/tasks/:id/status` | Any | Update task status (ownership enforced) |
+| PATCH | `/api/tasks/:id/txhash` | Any | Store Web3 tx hash (ownership enforced) |
+
+### Dashboard (3 endpoints)
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/api/dashboard/stats` | Any | Stats (response differs by role) |
+| GET | `/api/dashboard/leaderboard` | Admin | Top 5 by productivity score |
+| GET | `/api/dashboard/activity` | Any | Recent activity (scoped by role) |
+
+### AI Intelligence (6 endpoints)
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/api/ai/chat` | Admin | AI HR assistant (Gemini) |
+| GET | `/api/ai/skill-gap` | Admin | Org-wide skill gap analysis |
+| GET | `/api/ai/skill-gap/me` | Employee | Personal skill gap + learning plan |
+| GET | `/api/ai/daily-insight` | Admin | Daily AI insight |
+| POST | `/api/ai/smart-assign` | Admin | AI task assignment recommendation |
+| POST | `/api/ai/extract-skills` | Any | Extract skills from resume PDF |
+
+## API Documentation
+
+- **OpenAPI Spec:** [`openapi.yaml`](./openapi.yaml) — import into Swagger UI, Postman, Insomnia, or any OpenAPI tool
+- **Detailed Docs:** [`docs/API_REFERENCE.md`](./docs/API_REFERENCE.md) — full curl examples and response samples
+
+**View the spec online:** Copy the raw `openapi.yaml` content into [Swagger Editor](https://editor.swagger.io) or import it into Postman.
+
+## Rate Limiting
+
+- **General endpoints:** 500 requests / 15 minutes
+- **AI endpoints:** 30 requests / 15 minutes
+
+## Productivity Scoring
+
+```
+Final Score = Completion (40%) + Deadline (35%) + Priority (25%)
+
+Completion = (completedTasks / totalTasks) * 40
+Deadline   = (onTimeTasks / completedTasks) * 35
+Priority   = (highPriorityCompleted / highPriorityTotal) * 25
+```
+
+## Scripts
 
 ```bash
-# Start dev server with hot reload
-npm run dev
-
-# View database in Prisma Studio
-npm run prisma:studio
-
-# Create new migration
-npx prisma migrate dev --name migration_name
+npm run dev              # Start dev server with hot reload
+npm run build            # Compile TypeScript
+npm start                # Run compiled JS (production)
+npm run prisma:studio    # Open Prisma Studio GUI
+npm run prisma:migrate   # Run database migrations
+npm run seed:dummy       # Seed dummy data
+npm run docker:build     # Build Docker image
+npm run docker:run       # Run with Docker Compose
+npm run docker:push      # Build and push to registry
 ```
+
+## Deployment
+
+Deployed on **Render** with PostgreSQL. Set all environment variables in the Render dashboard.
+
+Build command: `npm install && npx prisma generate && npx prisma migrate deploy && npm run build`
+Start command: `npm start`
