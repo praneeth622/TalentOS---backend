@@ -2,7 +2,8 @@
 
 AI-powered workforce intelligence API with dual-role authentication, productivity analytics, and Web3 task verification.
 
-**Production URL:** https://talentos-backend.onrender.com
+**Production URL:** https://talentos-backend.onrender.com  
+**Docker Hub:** [praneeth0331](https://app.docker.com/accounts/praneeth0331) — image: `praneeth0331/talentos-backend:latest`
 
 ## Tech Stack
 
@@ -16,6 +17,8 @@ AI-powered workforce intelligence API with dual-role authentication, productivit
 - **Web3:** Polygon Amoy (txHash verification)
 
 ## Setup
+
+### Local (Node)
 
 ```bash
 # Use Node.js 24
@@ -32,6 +35,37 @@ npx prisma migrate dev
 
 # Start development server
 npm run dev
+```
+
+### Docker (pull pre-built image)
+
+```bash
+# Pull from Docker Hub
+docker pull praneeth0331/talentos-backend:latest
+
+# Run backend + Postgres
+cp .env.example .env   # set JWT_SECRET, GEMINI_API_KEY, FRONTEND_URL, DATABASE_URL for postgres service
+docker compose up -d
+# API at http://localhost:5001
+```
+
+`docker-compose.yml` uses the image `praneeth0331/talentos-backend:latest` and starts a local Postgres. Set `JWT_SECRET`, `GEMINI_API_KEY`, and `FRONTEND_URL` in `.env` (or export them).
+
+### Docker (build locally and run)
+
+```bash
+npm run docker:build
+docker compose -f docker-compose.build.yml up -d
+```
+
+### Docker (build and push to Docker Hub)
+
+```bash
+# Requires Docker login: docker login
+npm run docker:push
+# Or manually:
+# docker build --platform linux/amd64 -t praneeth0331/talentos-backend:latest .
+# docker push praneeth0331/talentos-backend:latest
 ```
 
 ## Environment Variables
@@ -54,17 +88,14 @@ RESEND_FROM_EMAIL="TalentOS <noreply@yourdomain.com>"
 
 ## Architecture
 
-**Strict 3-layer pattern:**
+**3 layers:** Route → Controller → Service → (Prisma | Gemini | Resend)
 
 ```
-Routes → Controllers → Services → Prisma (DB)
-  │
-  ├── middleware/auth.middleware.ts      → JWT verification
-  ├── middleware/requireAdmin.middleware  → Admin-only guard
-  ├── middleware/requireEmployee.middleware → Employee-only guard
-  ├── middleware/validate.middleware.ts   → Zod schema validation
-  └── middleware/upload.middleware.ts     → PDF file upload (multer)
+  Request → Routes → [auth | requireAdmin/Employee | validate] → Controller → Service → DB/AI/Email
+                                                                                    → errorMiddleware → Response
 ```
+
+Full diagram and layer rules: **[ARCHITECTURE.md](./ARCHITECTURE.md)**
 
 ## Project Structure
 
@@ -141,10 +172,9 @@ backend/
 
 ## API Documentation
 
-- **OpenAPI Spec:** [`openapi.yaml`](./openapi.yaml) — import into Swagger UI, Postman, Insomnia, or any OpenAPI tool
+- **Interactive API Docs (live):** [talentos-api.praneethd.xyz](https://talentos-api.praneethd.xyz/)
+- **OpenAPI Spec:** [`openapi.yaml`](./openapi.yaml) — import into Swagger UI, Postman, Insomnia, or Apidog
 - **Detailed Docs:** [`docs/API_REFERENCE.md`](./docs/API_REFERENCE.md) — full curl examples and response samples
-
-**View the spec online:** Copy the raw `openapi.yaml` content into [Swagger Editor](https://editor.swagger.io) or import it into Postman.
 
 ## Rate Limiting
 
@@ -177,7 +207,5 @@ npm run docker:push      # Build and push to registry
 
 ## Deployment
 
-Deployed on **Render** with PostgreSQL. Set all environment variables in the Render dashboard.
-
-Build command: `npm install && npx prisma generate && npx prisma migrate deploy && npm run build`
-Start command: `npm start`
+- **Render:** Set env vars in dashboard. Build: `npm install && npx prisma generate && npx prisma migrate deploy && npm run build`. Start: `npm start`.
+- **Docker (self-host):** Use `docker pull praneeth0331/talentos-backend:latest` and `docker compose up -d` with a `.env` that has `DATABASE_URL`, `JWT_SECRET`, `GEMINI_API_KEY`, `FRONTEND_URL`. See [Docker Hub — praneeth0331](https://app.docker.com/accounts/praneeth0331).
