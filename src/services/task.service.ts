@@ -279,7 +279,8 @@ export const deleteTask = async (
 export const updateTaskStatus = async (
   taskId: string,
   input: UpdateTaskStatusInput,
-  orgId: string
+  orgId: string,
+  requesterId?: string
 ): Promise<TaskData> => {
   const task = await prisma.task.findFirst({
     where: {
@@ -290,6 +291,10 @@ export const updateTaskStatus = async (
 
   if (!task) {
     throw new AppError('Task not found', 404);
+  }
+
+  if (requesterId && task.employeeId !== requesterId) {
+    throw new AppError('You can only update your own tasks', 403);
   }
 
   const updateData: any = { status: input.status };
@@ -326,6 +331,31 @@ export const updateTaskStatus = async (
 };
 
 /**
+ * Get tasks for the authenticated employee
+ */
+export const getMyTasks = async (employeeId: string, orgId: string) => {
+  const tasks = await prisma.task.findMany({
+    where: { employeeId, orgId },
+    select: {
+      id: true,
+      title: true,
+      description: true,
+      status: true,
+      priority: true,
+      deadline: true,
+      completedAt: true,
+      txHash: true,
+      skillRequired: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+    orderBy: { updatedAt: 'desc' },
+  });
+
+  return tasks;
+};
+
+/**
  * Update task txHash (Web3 signature)
  * Used when employee signs task completion on blockchain
  * Scoped by orgId for security
@@ -339,7 +369,8 @@ export const updateTaskStatus = async (
 export const updateTaskTxHash = async (
   taskId: string,
   input: UpdateTaskTxHashInput,
-  orgId: string
+  orgId: string,
+  requesterId?: string
 ): Promise<TaskData> => {
   const task = await prisma.task.findFirst({
     where: {
@@ -350,6 +381,10 @@ export const updateTaskTxHash = async (
 
   if (!task) {
     throw new AppError('Task not found', 404);
+  }
+
+  if (requesterId && task.employeeId !== requesterId) {
+    throw new AppError('You can only update your own tasks', 403);
   }
 
   const updated = await prisma.task.update({

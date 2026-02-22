@@ -154,7 +154,7 @@ export const updateTaskStatus = async (
     const id = req.params.id as string;
     const data = req.body;
     const orgId = req.org!.orgId;
-    const task = await taskService.updateTaskStatus(id, data, orgId);
+    const task = await taskService.updateTaskStatus(id, data, orgId, req.org!.employeeId);
 
     const response: SuccessResponse = {
       success: true,
@@ -182,7 +182,7 @@ export const updateTaskTxHash = async (
     const id = req.params.id as string;
     const data = req.body;
     const orgId = req.org!.orgId;
-    const task = await taskService.updateTaskTxHash(id, data, orgId);
+    const task = await taskService.updateTaskTxHash(id, data, orgId, req.org!.employeeId);
 
     const response: SuccessResponse = {
       success: true,
@@ -191,6 +191,25 @@ export const updateTaskTxHash = async (
     };
 
     res.status(200).json(response);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Get my tasks controller (employee self)
+ */
+export const getMyTasksController = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const employeeId = req.org!.employeeId!;
+    const orgId = req.org!.orgId;
+    const tasks = await taskService.getMyTasks(employeeId, orgId);
+
+    res.status(200).json({ success: true, data: tasks });
   } catch (error) {
     next(error);
   }

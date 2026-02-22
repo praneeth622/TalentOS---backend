@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import * as aiController from '../controllers/ai.controller';
 import { authMiddleware } from '../middleware/auth.middleware';
+import { requireAdmin } from '../middleware/requireAdmin.middleware';
 import { validate } from '../middleware/validate.middleware';
 import { upload } from '../middleware/upload.middleware';
 
@@ -27,7 +28,7 @@ const smartAssignSchema = z.object({
  * General HR intelligence assistant
  * Ask questions about team, employees, or organization
  */
-router.post('/chat', authMiddleware, validate(aiChatSchema), aiController.aiChat);
+router.post('/chat', authMiddleware, requireAdmin, validate(aiChatSchema), aiController.aiChat);
 
 /**
  * GET /api/ai/skill-gap
@@ -35,7 +36,7 @@ router.post('/chat', authMiddleware, validate(aiChatSchema), aiController.aiChat
  * Returns missing skills per employee and organizational recommendations
  * Cached for 24 hours
  */
-router.get('/skill-gap', authMiddleware, aiController.analyzeSkillGap);
+router.get('/skill-gap', authMiddleware, requireAdmin, aiController.analyzeSkillGap);
 
 /**
  * GET /api/ai/daily-insight
@@ -43,7 +44,7 @@ router.get('/skill-gap', authMiddleware, aiController.analyzeSkillGap);
  * Based on organization statistics and performance
  * Cached for 24 hours
  */
-router.get('/daily-insight', authMiddleware, aiController.getDailyInsight);
+router.get('/daily-insight', authMiddleware, requireAdmin, aiController.getDailyInsight);
 
 /**
  * POST /api/ai/smart-assign
@@ -53,6 +54,7 @@ router.get('/daily-insight', authMiddleware, aiController.getDailyInsight);
 router.post(
   '/smart-assign',
   authMiddleware,
+  requireAdmin,
   validate(smartAssignSchema),
   aiController.smartAssign
 );

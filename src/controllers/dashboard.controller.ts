@@ -14,6 +14,13 @@ export const getDashboardStats = async (
 ): Promise<void> => {
   try {
     const orgId = req.org!.orgId;
+
+    if (req.org!.employeeId) {
+      const stats = await dashboardService.getEmployeeDashboardStats(req.org!.employeeId, orgId);
+      res.status(200).json({ success: true, data: stats });
+      return;
+    }
+
     const stats = await dashboardService.getDashboardStats(orgId);
 
     const response: SuccessResponse = {
@@ -64,6 +71,13 @@ export const getRecentActivity = async (
 ): Promise<void> => {
   try {
     const orgId = req.org!.orgId;
+
+    if (req.org!.employeeId) {
+      const activity = await dashboardService.getMyRecentActivity(req.org!.employeeId, orgId);
+      res.status(200).json({ success: true, data: activity });
+      return;
+    }
+
     const activity = await dashboardService.getRecentActivity(orgId);
 
     const response: SuccessResponse = {

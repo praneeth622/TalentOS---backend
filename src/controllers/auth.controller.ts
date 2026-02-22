@@ -1,6 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import * as authService from '../services/auth.service';
-import { SuccessResponse, AuthResponse } from '../types';
+import { SuccessResponse, AuthResponse, AuthRequest } from '../types';
 
 /**
  * Register controller
@@ -47,6 +47,52 @@ export const login = async (
     };
 
     res.status(200).json(response);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Employee login controller
+ */
+export const loginEmployeeController = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { email, password } = req.body;
+    const result = await authService.loginEmployee(email, password);
+
+    res.status(200).json({
+      success: true,
+      data: result,
+      message: 'Employee login successful',
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Change password controller (employee only)
+ */
+export const changePasswordController = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const employeeId = req.org!.employeeId!;
+    const orgId = req.org!.orgId;
+    const { currentPassword, newPassword } = req.body;
+    const result = await authService.changePassword(employeeId, orgId, currentPassword, newPassword);
+
+    res.status(200).json({
+      success: true,
+      data: result,
+      message: 'Password changed successfully',
+    });
   } catch (error) {
     next(error);
   }

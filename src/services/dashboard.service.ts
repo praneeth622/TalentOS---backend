@@ -1,5 +1,6 @@
 import { prisma } from '../lib/prisma';
 import { calculateProductivityScore } from './scoring.service';
+import { AppError } from '../utils/AppError';
 import { DashboardStats, LeaderboardEmployee, ActivityLog } from '../types';
 
 /**
@@ -116,6 +117,81 @@ export const getRecentActivity = async (orgId: string): Promise<ActivityLog[]> =
     orderBy: {
       updatedAt: 'desc',
     },
+    take: 10,
+  });
+
+  return tasks.map(task => ({
+    id: task.id,
+    title: task.title,
+    status: task.status,
+    priority: task.priority,
+    updatedAt: task.updatedAt,
+    employeeName: task.employee.name,
+    employeeId: task.employeeId,
+  }));
+};
+
+/**
+ * Get dashboard stats for an employee
+ */
+export const getEmployeeDashboardStats = async (employeeId: string, orgId: string) => {
+  const employee = await prisma.employee.findFirst({
+    where: { id: employeeId, orgId },
+    select: {
+      id: true,
+      name: true,
+      role: true,
+      department: true,
+      skills: true,
+      tasks: {
+        select: { status: true, priority: true, deadline: true, completedAt: true, updatedAt: true, title: true },
+      },
+    },
+  });
+
+  if (!employee) {
+    throw new AppError('Employee not found', 404);
+  }
+
+  const { tasks } = employee;
+  const assignedTasks = tasks.filter(t => t.status === 'TODO').length;
+  const inProgressTasks = tasks.filter(t => t.status === 'IN_PROGRESS').length;
+  const completedTasks = tasks.filter(t => t.status === 'COMPLETED').length;
+  const totalTasks = tasks.length;
+
+  const score = await calculateProductivityScore(employeeId, orgId);
+
+  const recentActivity = [...tasks]
+    .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+    .slice(0, 5)
+    .map(t => ({ title: t.title, status: t.status, updatedAt: t.updatedAt }));
+
+  return {
+    assignedTasks,
+    inProgressTasks,
+    completedTasks,
+    totalTasks,
+    productivityScore: score.finalScore,
+    recentActivity,
+  };
+};
+
+/**
+ * Get recent activity for a specific employee
+ */
+export const getMyRecentActivity = async (employeeId: string, orgId: string): Promise<ActivityLog[]> => {
+  const tasks = await prisma.task.findMany({
+    where: { employeeId, orgId },
+    select: {
+      id: true,
+      title: true,
+      status: true,
+      priority: true,
+      updatedAt: true,
+      employeeId: true,
+      employee: { select: { name: true } },
+    },
+    orderBy: { updatedAt: 'desc' },
     take: 10,
   });
 

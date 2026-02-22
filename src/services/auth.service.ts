@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../lib/prisma';
@@ -120,4 +121,115 @@ export const loginOrganization = async (input: LoginInput): Promise<AuthResponse
  */
 export const verifyToken = (token: string): JwtPayload => {
   return jwt.verify(token, JWT_SECRET) as JwtPayload;
+};
+
+/**
+ * Generate a random 12-character URL-safe password
+ */
+export function generatePassword(): string {
+  return crypto.randomBytes(9).toString('base64url');
+}
+
+/**
+ * Login an employee with email and password
+ *
+ * @param email - Employee email
+ * @param password - Employee password
+ * @returns Employee data and JWT token with employeeId + roleType
+ */
+export const loginEmployee = async (
+  email: string,
+  password: string
+): Promise<{ employee: { id: string; name: string; email: string; role: string; department: string }; token: string }> => {
+  const employee = await prisma.employee.findFirst({
+    where: { email, isActive: true },
+    select: {
+      id: true,
+      orgId: true,
+      email: true,
+      name: true,
+      role: true,
+      department: true,
+      password: true,
+      skills: true,
+      walletAddress: true,
+    },
+  });
+
+  if (!employee) {
+    throw new AppError('Invalid email or password', 401);
+  }
+
+  if (!employee.password) {
+    throw new AppError('Account not configured. Contact your admin.', 401);
+  }
+
+  const isPasswordValid = await bcrypt.compare(password, employee.password);
+  if (!isPasswordValid) {
+    throw new AppError('Invalid email or password', 401);
+  }
+
+  const token = jwt.sign(
+    {
+      orgId: employee.orgId,
+      email: employee.email,
+      employeeId: employee.id,
+      roleType: 'EMPLOYEE',
+    },
+    JWT_SECRET,
+    { expiresIn: JWT_EXPIRES_IN }
+  );
+
+  return {
+    employee: {
+      id: employee.id,
+      name: employee.name,
+      email: employee.email,
+      role: employee.role,
+      department: employee.department,
+    },
+    token,
+  };
+};
+
+/**
+ * Change an employee's password
+ *
+ * @param employeeId - Employee ID from JWT
+ * @param orgId - Organization ID from JWT
+ * @param currentPassword - Current password to verify
+ * @param newPassword - New password to set
+ * @returns Success message
+ */
+export const changePassword = async (
+  employeeId: string,
+  orgId: string,
+  currentPassword: string,
+  newPassword: string
+): Promise<{ message: string }> => {
+  const employee = await prisma.employee.findFirst({
+    where: { id: employeeId, orgId },
+  });
+
+  if (!employee) {
+    throw new AppError('Employee not found', 404);
+  }
+
+  if (!employee.password) {
+    throw new AppError('No password set', 400);
+  }
+
+  const isPasswordValid = await bcrypt.compare(currentPassword, employee.password);
+  if (!isPasswordValid) {
+    throw new AppError('Current password is incorrect', 401);
+  }
+
+  const hashedNewPassword = await bcrypt.hash(newPassword, 10);
+
+  await prisma.employee.update({
+    where: { id: employeeId },
+    data: { password: hashedNewPassword },
+  });
+
+  return { message: 'Password changed successfully' };
 };

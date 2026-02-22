@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { z } from 'zod';
 import * as employeeController from '../controllers/employee.controller';
 import { authMiddleware } from '../middleware/auth.middleware';
+import { requireAdmin } from '../middleware/requireAdmin.middleware';
+import { requireEmployee } from '../middleware/requireEmployee.middleware';
 import { validate } from '../middleware/validate.middleware';
 
 const router = Router();
@@ -34,7 +36,7 @@ const updateEmployeeSchema = z.object({
  * GET /api/employees
  * Get all employees for the authenticated organization
  */
-router.get('/', authMiddleware, employeeController.getAllEmployees);
+router.get('/', authMiddleware, requireAdmin, employeeController.getAllEmployees);
 
 /**
  * POST /api/employees
@@ -43,15 +45,28 @@ router.get('/', authMiddleware, employeeController.getAllEmployees);
 router.post(
   '/',
   authMiddleware,
+  requireAdmin,
   validate(createEmployeeSchema),
   employeeController.createEmployee
 );
 
 /**
+ * GET /api/employees/me
+ * Get employee's own profile with tasks
+ */
+router.get('/me', authMiddleware, requireEmployee, employeeController.getMyProfileController);
+
+/**
+ * GET /api/employees/me/score
+ * Get employee's own productivity score
+ */
+router.get('/me/score', authMiddleware, requireEmployee, employeeController.getMyScoreController);
+
+/**
  * GET /api/employees/:id
  * Get single employee with all their tasks
  */
-router.get('/:id', authMiddleware, employeeController.getEmployeeById);
+router.get('/:id', authMiddleware, requireAdmin, employeeController.getEmployeeById);
 
 /**
  * PUT /api/employees/:id
@@ -60,6 +75,7 @@ router.get('/:id', authMiddleware, employeeController.getEmployeeById);
 router.put(
   '/:id',
   authMiddleware,
+  requireAdmin,
   validate(updateEmployeeSchema),
   employeeController.updateEmployee
 );
@@ -68,12 +84,12 @@ router.put(
  * DELETE /api/employees/:id
  * Delete an employee
  */
-router.delete('/:id', authMiddleware, employeeController.deleteEmployee);
+router.delete('/:id', authMiddleware, requireAdmin, employeeController.deleteEmployee);
 
 /**
  * GET /api/employees/:id/score
  * Get employee's productivity score
  */
-router.get('/:id/score', authMiddleware, employeeController.getEmployeeScore);
+router.get('/:id/score', authMiddleware, requireAdmin, employeeController.getEmployeeScore);
 
 export default router;

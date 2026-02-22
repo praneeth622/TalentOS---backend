@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import * as dashboardController from '../controllers/dashboard.controller';
 import { authMiddleware } from '../middleware/auth.middleware';
+import { requireAdmin } from '../middleware/requireAdmin.middleware';
 
 const router = Router();
 
@@ -16,7 +17,7 @@ router.get('/stats', authMiddleware, dashboardController.getDashboardStats);
  * Get top 5 employees ranked by productivity score
  * Returns: Array of employees with scores and task counts
  */
-router.get('/leaderboard', authMiddleware, dashboardController.getLeaderboard);
+router.get('/leaderboard', authMiddleware, requireAdmin, dashboardController.getLeaderboard);
 
 /**
  * GET /api/dashboard/activity

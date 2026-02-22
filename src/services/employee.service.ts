@@ -1,12 +1,15 @@
+import bcrypt from 'bcryptjs';
 import { prisma } from '../lib/prisma';
 import { AppError } from '../utils/AppError';
-import { 
-  EmployeeData, 
-  CreateEmployeeInput, 
+import {
+  EmployeeData,
+  CreateEmployeeInput,
   UpdateEmployeeInput,
-  EmployeeWithTasks 
+  EmployeeWithTasks
 } from '../types';
 import { calculateProductivityScore, ProductivityScore } from './scoring.service';
+import { generatePassword } from './auth.service';
+import { sendWelcomeEmail } from './email.service';
 
 /**
  * Get all employees for an organization
@@ -110,10 +113,15 @@ export const createEmployee = async (
     throw new AppError('Employee with this email already exists in your organization', 409);
   }
 
+  // Generate and hash a temporary password
+  const plainPassword = generatePassword();
+  const hashedPassword = await bcrypt.hash(plainPassword, 10);
+
   const employee = await prisma.employee.create({
     data: {
       ...input,
       orgId,
+      password: hashedPassword,
     },
     select: {
       id: true,
@@ -128,6 +136,14 @@ export const createEmployee = async (
       updatedAt: true,
     },
   });
+
+  // Fetch org name and send welcome email (non-blocking)
+  const org = await prisma.organization.findUnique({
+    where: { id: orgId },
+    select: { name: true },
+  });
+
+  sendWelcomeEmail(employee.email, employee.name, plainPassword, org?.name || 'Your Organization');
 
   return employee;
 };
@@ -246,4 +262,61 @@ export const getEmployeeScore = async (
   }
 
   return await calculateProductivityScore(employeeId, orgId);
+};
+
+/**
+ * Get employee's own profile with tasks
+ */
+export const getMyProfile = async (employeeId: string, orgId: string) => {
+  const employee = await prisma.employee.findFirst({
+    where: { id: employeeId, orgId },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      department: true,
+      skills: true,
+      walletAddress: true,
+      roleType: true,
+      isActive: true,
+      createdAt: true,
+      tasks: {
+        select: {
+          id: true,
+          title: true,
+          status: true,
+          priority: true,
+          deadline: true,
+          completedAt: true,
+          txHash: true,
+          createdAt: true,
+        },
+        orderBy: { updatedAt: 'desc' },
+      },
+    },
+  });
+
+  if (!employee) {
+    throw new AppError('Employee not found', 404);
+  }
+
+  return employee;
+};
+
+/**
+ * Get employee's own productivity score
+ */
+export const getMyScore = async (employeeId: string, orgId: string) => {
+  const employee = await prisma.employee.findFirst({
+    where: { id: employeeId, orgId },
+    select: { id: true, name: true },
+  });
+
+  if (!employee) {
+    throw new AppError('Employee not found', 404);
+  }
+
+  const score = await calculateProductivityScore(employeeId, orgId);
+  return { employeeId, employeeName: employee.name, ...score };
 };

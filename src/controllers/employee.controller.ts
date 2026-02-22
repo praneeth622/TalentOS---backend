@@ -154,3 +154,41 @@ export const getEmployeeScore = async (
     next(error);
   }
 };
+
+/**
+ * Get my profile controller (employee self)
+ */
+export const getMyProfileController = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const employeeId = req.org!.employeeId!;
+    const orgId = req.org!.orgId;
+    const profile = await employeeService.getMyProfile(employeeId, orgId);
+
+    res.status(200).json({ success: true, data: profile });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Get my score controller (employee self)
+ */
+export const getMyScoreController = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const employeeId = req.org!.employeeId!;
+    const orgId = req.org!.orgId;
+    const score = await employeeService.getMyScore(employeeId, orgId);
+
+    res.status(200).json({ success: true, data: score });
+  } catch (error) {
+    next(error);
+  }
+};

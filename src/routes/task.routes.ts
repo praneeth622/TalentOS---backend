@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { z } from 'zod';
 import * as taskController from '../controllers/task.controller';
 import { authMiddleware } from '../middleware/auth.middleware';
+import { requireAdmin } from '../middleware/requireAdmin.middleware';
+import { requireEmployee } from '../middleware/requireEmployee.middleware';
 import { validate } from '../middleware/validate.middleware';
 
 const router = Router();
@@ -46,11 +48,17 @@ const updateTaskTxHashSchema = z.object({
 });
 
 /**
+ * GET /api/tasks/my-tasks
+ * Get employee's own tasks
+ */
+router.get('/my-tasks', authMiddleware, requireEmployee, taskController.getMyTasksController);
+
+/**
  * GET /api/tasks
- * Get all tasks for the authenticated organization
+ * Get all tasks for the authenticated organization (admin only)
  * Optional query params: ?employeeId=xxx&status=TODO
  */
-router.get('/', authMiddleware, taskController.getAllTasks);
+router.get('/', authMiddleware, requireAdmin, taskController.getAllTasks);
 
 /**
  * POST /api/tasks
@@ -59,6 +67,7 @@ router.get('/', authMiddleware, taskController.getAllTasks);
 router.post(
   '/',
   authMiddleware,
+  requireAdmin,
   validate(createTaskSchema),
   taskController.createTask
 );
@@ -67,7 +76,7 @@ router.post(
  * GET /api/tasks/:id
  * Get single task with employee info
  */
-router.get('/:id', authMiddleware, taskController.getTaskById);
+router.get('/:id', authMiddleware, requireAdmin, taskController.getTaskById);
 
 /**
  * PUT /api/tasks/:id
@@ -76,6 +85,7 @@ router.get('/:id', authMiddleware, taskController.getTaskById);
 router.put(
   '/:id',
   authMiddleware,
+  requireAdmin,
   validate(updateTaskSchema),
   taskController.updateTask
 );
@@ -84,7 +94,7 @@ router.put(
  * DELETE /api/tasks/:id
  * Delete a task
  */
-router.delete('/:id', authMiddleware, taskController.deleteTask);
+router.delete('/:id', authMiddleware, requireAdmin, taskController.deleteTask);
 
 /**
  * PATCH /api/tasks/:id/status
