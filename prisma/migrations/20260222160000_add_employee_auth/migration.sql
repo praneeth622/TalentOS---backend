@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "employees" ADD COLUMN "password" TEXT;
+ALTER TABLE "employees" ADD COLUMN "roleType" TEXT NOT NULL DEFAULT 'EMPLOYEE';
+ALTER TABLE "employees" ADD COLUMN "isActive" BOOLEAN NOT NULL DEFAULT true;
