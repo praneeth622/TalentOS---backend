@@ -108,6 +108,28 @@ export const smartAssign = async (
 };
 
 /**
+ * Employee skill gap controller
+ * Returns missing skills and a personal 30-day learning plan for the calling employee.
+ */
+export const analyzeMySkillGap = async (
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const employeeId = req.org!.employeeId!;
+    const orgId = req.org!.orgId;
+    const forceRefresh = req.query.refresh === 'true';
+    const result = await aiService.analyzeEmployeeSkillGap(employeeId, orgId, forceRefresh);
+
+    const response: SuccessResponse = { success: true, data: result };
+    res.status(200).json(response);
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * Extract skills from a resume PDF controller
  * Accepts multipart/form-data with field "resume" (PDF only, max 5MB)
  * Thin wrapper that passes the multer buffer to the AI service

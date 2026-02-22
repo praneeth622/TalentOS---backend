@@ -300,6 +300,15 @@ export interface SmartAssignResponse {
 }
 
 /**
+ * Employee-scoped skill gap response (GET /api/ai/skill-gap/me)
+ */
+export interface EmployeeSkillGapResponse {
+  missingSkills: string[];
+  coveragePercent: number;
+  learningPlan: string[];
+}
+
+/**
  * PDF skill extraction result
  */
 export interface ExtractSkillsResult {

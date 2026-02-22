@@ -3,6 +3,7 @@ import { z } from 'zod';
 import * as aiController from '../controllers/ai.controller';
 import { authMiddleware } from '../middleware/auth.middleware';
 import { requireAdmin } from '../middleware/requireAdmin.middleware';
+import { requireEmployee } from '../middleware/requireEmployee.middleware';
 import { validate } from '../middleware/validate.middleware';
 import { upload } from '../middleware/upload.middleware';
 
@@ -29,6 +30,13 @@ const smartAssignSchema = z.object({
  * Ask questions about team, employees, or organization
  */
 router.post('/chat', authMiddleware, requireAdmin, validate(aiChatSchema), aiController.aiChat);
+
+/**
+ * GET /api/ai/skill-gap/me
+ * Employee-scoped skill gap — missing skills + personal 30-day learning plan.
+ * Accessible by employees only. Cached 24 h per employee.
+ */
+router.get('/skill-gap/me', authMiddleware, requireEmployee, aiController.analyzeMySkillGap);
 
 /**
  * GET /api/ai/skill-gap

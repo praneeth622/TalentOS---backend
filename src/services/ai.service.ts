@@ -14,6 +14,7 @@ import {
   SmartAssignInput,
   SmartAssignResponse,
   ExtractSkillsResult,
+  EmployeeSkillGapResponse,
 } from '../types';
 
 /**
@@ -438,4 +439,90 @@ ${truncatedText}`;
     role: parsed.role || '',
     summary: parsed.summary || '',
   };
+};
+
+/**
+ * Employee-scoped Skill Gap Analysis
+ * Analyses missing skills for the calling employee based on their role requirements.
+ * Generates a personalised 30-day learning plan via Gemini.
+ * Cached per employeeId for 24 hours.
+ *
+ * @param employeeId - The employee's ID (from JWT)
+ * @param orgId      - The organisation ID (from JWT)
+ * @param forceRefresh - Bypass cache when true
+ */
+export const analyzeEmployeeSkillGap = async (
+  employeeId: string,
+  orgId: string,
+  forceRefresh = false
+): Promise<EmployeeSkillGapResponse> => {
+  const cacheKey = `skill-gap-employee-${employeeId}`;
+
+  if (!forceRefresh) {
+    const cached = await getCachedResponse(orgId, cacheKey);
+    if (cached) {
+      return JSON.parse(cached) as EmployeeSkillGapResponse;
+    }
+  }
+
+  const employee = await prisma.employee.findFirst({
+    where: { id: employeeId, orgId },
+    select: { name: true, role: true, skills: true },
+  });
+
+  if (!employee) {
+    throw new AppError('Employee not found', 404);
+  }
+
+  const requiredSkills = ROLE_REQUIREMENTS[employee.role] ?? ROLE_REQUIREMENTS.Default;
+  const lowerCurrent = employee.skills.map((s) => s.toLowerCase());
+  const missingSkills = requiredSkills.filter(
+    (skill) => !lowerCurrent.includes(skill.toLowerCase())
+  );
+
+  const coveragePercent =
+    requiredSkills.length > 0
+      ? Math.round(((requiredSkills.length - missingSkills.length) / requiredSkills.length) * 100)
+      : 100;
+
+  const prompt = `Return only valid JSON, no markdown formatting or code blocks.
+
+Generate a personalised 30-day learning plan for ${employee.name}, a ${employee.role}.
+Current skills: ${employee.skills.join(', ') || 'none listed'}.
+Missing skills for this role: ${missingSkills.join(', ') || 'none — all covered'}.
+
+Return exactly this format with 3–5 actionable learning steps:
+{
+  "learningPlan": ["step description", "step description"]
+}
+
+If no missing skills, give skill enhancement tips relevant to the role.`;
+
+  const model = getGeminiModel();
+  const result = await model.generateContent(prompt);
+  let responseText = result.response.text().trim();
+  responseText = responseText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+
+  let learningPlan: string[] = [];
+  try {
+    const parsed = JSON.parse(responseText) as { learningPlan?: string[] };
+    learningPlan = Array.isArray(parsed.learningPlan) ? parsed.learningPlan : [];
+  } catch {
+    // Graceful fallback if Gemini output is malformed
+    learningPlan =
+      missingSkills.length > 0
+        ? missingSkills.map(
+            (skill) => `Learn ${skill} through online courses and hands-on projects`
+          )
+        : [
+            'Deepen expertise in your core stack through advanced courses',
+            'Contribute to open-source projects to build practical experience',
+            'Mentor peers to reinforce and extend your knowledge',
+          ];
+  }
+
+  const response: EmployeeSkillGapResponse = { missingSkills, coveragePercent, learningPlan };
+  await cacheResponse(orgId, cacheKey, JSON.stringify(response), 24);
+
+  return response;
 };
