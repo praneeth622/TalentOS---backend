@@ -19,6 +19,14 @@ const PORT = process.env.PORT || 5000;
 
 // Support comma-separated FRONTEND_URL so one build works for local + prod
 // e.g. FRONTEND_URL="https://talentos.praneethd.xyz,http://localhost:3000"
+if (!process.env.FRONTEND_URL) {
+  console.warn(
+    '⚠️  [CORS] FRONTEND_URL env var is NOT set — falling back to http://localhost:3000 only. ' +
+    'Production requests from your deployed frontend WILL be blocked. ' +
+    'Set FRONTEND_URL on your hosting platform (Render → Environment tab).'
+  );
+}
+
 const ALLOWED_ORIGINS = (process.env.FRONTEND_URL || 'http://localhost:3000')
   .split(',')
   .map((o) => o.trim().replace(/\/$/, '')); // strip trailing slashes

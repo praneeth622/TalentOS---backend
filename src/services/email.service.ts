@@ -13,8 +13,14 @@ function getResend(): Resend {
  * Branded sender — must match a Resend-verified domain.
  * Uses RESEND_FROM_EMAIL env var which should be in the form:
  *   TalentOS <noreply@talentos.praneethd.xyz>
+ *
+ * Strip any accidental surrounding/trailing quotes that hosting platforms
+ * (Render, Railway, etc.) sometimes include when the value is pasted with
+ * quotes, resulting in: TalentOS <noreply@talentos.praneethd.xyz>"
  */
-const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || 'TalentOS <noreply@talentos.praneethd.xyz>';
+const FROM_EMAIL = (
+  process.env.RESEND_FROM_EMAIL || 'TalentOS <noreply@talentos.praneethd.xyz>'
+).replace(/^["']+|["']+$/g, '').trim();
 
 const LOGIN_URL = 'https://talentos.praneethd.xyz/login';
 
@@ -33,13 +39,24 @@ export const sendWelcomeEmail = async (
   password: string,
   orgName: string
 ): Promise<void> => {
+  // ── pre-flight checks ─────────────────────────────────────────
   if (!process.env.RESEND_API_KEY) {
-    console.log(`[Email] Skipped (no RESEND_API_KEY). Would send welcome email to ${to}`);
+    console.warn('[Email] ⚠️  RESEND_API_KEY is not set — email skipped.');
+    console.warn(`[Email]    Would have sent welcome email to: ${to}`);
     return;
   }
 
+  if (!process.env.RESEND_FROM_EMAIL) {
+    console.warn('[Email] ⚠️  RESEND_FROM_EMAIL is not set — using hardcoded fallback.');
+  }
+
+  console.log(`[Email] Attempting to send welcome email →`);
+  console.log(`[Email]   to      : ${to}`);
+  console.log(`[Email]   from    : ${FROM_EMAIL}`);
+  console.log(`[Email]   subject : Welcome to ${orgName} — Your TalentOS Account`);
+
   try {
-    await getResend().emails.send({
+    const { data, error: resendErr } = await getResend().emails.send({
       from: FROM_EMAIL,
       to,
       subject: `Welcome to ${orgName} — Your TalentOS Account`,
@@ -118,8 +135,91 @@ export const sendWelcomeEmail = async (
 </html>
       `,
     });
-    console.log(`[Email] Welcome email sent to ${to}`);
-  } catch (error) {
-    console.error('[Email] Failed to send welcome email:', error);
+
+    if (resendErr) {
+      const code = (resendErr as Record<string, unknown>).statusCode as number | undefined;
+      const msg  = (resendErr as Record<string, unknown>).message as string | undefined;
+
+      console.error('[Email] ❌ Resend API error');
+      console.error(`[Email]   to         : ${to}`);
+      console.error(`[Email]   from       : ${FROM_EMAIL}`);
+      console.error(`[Email]   statusCode : ${code ?? 'unknown'}`);
+      console.error(`[Email]   message    : ${msg ?? JSON.stringify(resendErr)}`);
+
+      if (code === 400) {
+        console.error('[Email]   cause → 400 Bad Request: malformed request body sent to Resend.');
+        console.error('[Email]   check  → "to", "from", "subject", "html" fields are all present and valid.');
+      } else if (code === 401) {
+        console.error('[Email]   cause → 401 Unauthorized: RESEND_API_KEY is missing or invalid.');
+        console.error('[Email]   fix   → Render dashboard → Environment → check RESEND_API_KEY value.');
+      } else if (code === 422) {
+        console.error('[Email]   cause → 422 Validation Error: one of the email fields failed Resend validation.');
+        console.error('[Email]   most likely → "from" address is not a verified Resend domain,');
+        console.error(`[Email]              or it contains stray quote characters (current value: "${FROM_EMAIL}").`);
+        console.error('[Email]   fix   → Render dashboard → Environment → set RESEND_FROM_EMAIL to exactly:');
+        console.error('[Email]           TalentOS <noreply@talentos.praneethd.xyz>  (no surrounding quotes)');
+      } else if (code === 429) {
+        console.error('[Email]   cause → 429 Rate Limited: too many emails sent in a short period.');
+        console.error('[Email]   fix   → add retry logic with exponential backoff, or upgrade Resend plan.');
+      } else if (code && code >= 500) {
+        console.error(`[Email]   cause → ${code} Resend server error: issue on Resend's side.`);
+        console.error('[Email]   fix   → retry later or check https://resend.com/status.');
+      } else {
+        console.error('[Email]   cause → unexpected error from Resend API.');
+        console.error('[Email]   raw   →', JSON.stringify(resendErr));
+      }
+
+      return;
+    }
+
+    if (data?.id) {
+      console.log(`[Email] ✅ Welcome email sent successfully`);
+      console.log(`[Email]   resend id : ${data.id}`);
+      console.log(`[Email]   to        : ${to}`);
+    } else {
+      console.warn('[Email] ⚠️  Resend returned no ID — email may not have been queued.');
+      console.warn('[Email]   data:', JSON.stringify(data));
+    }
+  } catch (error: unknown) {
+    console.error('[Email] ❌ Exception thrown while sending welcome email (network or SDK error)');
+    console.error(`[Email]   to   : ${to}`);
+    console.error(`[Email]   from : ${FROM_EMAIL}`);
+
+    const err = error as Record<string, unknown>;
+
+    if (error instanceof Error) {
+      const msg = error.message.toLowerCase();
+      console.error(`[Email]   message : ${error.message}`);
+
+      if (msg.includes('fetch failed') || msg.includes('econnrefused') || msg.includes('enotfound')) {
+        console.error('[Email]   cause → network error: could not reach Resend API.');
+        console.error('[Email]   check → outbound HTTPS from this server is allowed.');
+      } else if (msg.includes('timeout')) {
+        console.error('[Email]   cause → request to Resend timed out.');
+      } else if (msg.includes('invalid') && msg.includes('from')) {
+        console.error('[Email]   cause → "from" field rejected.');
+        console.error(`[Email]   value → "${FROM_EMAIL}"`);
+        console.error('[Email]   fix   → set RESEND_FROM_EMAIL in Render env (no surrounding quotes).');
+      } else {
+        console.error('[Email]   cause → unexpected SDK exception (see stack below).');
+      }
+
+      console.error(`[Email]   stack : ${error.stack}`);
+    }
+
+    // Surface any Resend-shaped error attached to the exception
+    if (err?.statusCode || err?.name) {
+      const code = err.statusCode as number | undefined;
+      console.error('[Email]   resend error payload →', JSON.stringify({
+        name: err.name,
+        statusCode: code,
+        message: err.message,
+      }));
+
+      if (code === 401) console.error('[Email]   hint → 401: invalid RESEND_API_KEY on Render.');
+      if (code === 422) console.error('[Email]   hint → 422: invalid from/to format or unverified domain.');
+      if (code === 429) console.error('[Email]   hint → 429: rate limit hit — slow down or upgrade plan.');
+      if (code && code >= 500) console.error('[Email]   hint → 5xx: Resend server error, retry later.');
+    }
   }
 };
