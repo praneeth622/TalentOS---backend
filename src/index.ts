@@ -17,26 +17,43 @@ validateEnv();
 const app: Application = express();
 const PORT = process.env.PORT || 5000;
 
-// Support comma-separated list so one build works in both local and production
+// Support comma-separated FRONTEND_URL so one build works for local + prod
+// e.g. FRONTEND_URL="https://talentos.praneethd.xyz,http://localhost:3000"
 const ALLOWED_ORIGINS = (process.env.FRONTEND_URL || 'http://localhost:3000')
   .split(',')
-  .map((o) => o.trim().replace(/\/$/, '')); // strip any trailing slashes
+  .map((o) => o.trim().replace(/\/$/, '')); // strip trailing slashes
 
-app.use(helmet());
+const corsOptions: cors.CorsOptions = {
+  origin: (origin, callback) => {
+    // Allow server-to-server / Postman (no origin header)
+    if (!origin) return callback(null, true);
+    if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+    console.warn(`[CORS] Blocked origin: ${origin}`);
+    callback(new Error(`CORS blocked for origin: ${origin}`));
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+};
+
+// cors() MUST come before helmet() — helmet can otherwise strip
+// the Access-Control-Allow-Origin header on preflight responses.
+// app.use handles all methods including OPTIONS preflight automatically.
+app.use(cors(corsOptions));
+
 app.use(
-  cors({
-    origin: (origin, callback) => {
-      // Allow requests with no origin (Postman, curl, server-to-server)
-      if (!origin) return callback(null, true);
-      if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
-      callback(new Error(`CORS blocked for origin: ${origin}`));
-    },
-    credentials: true,
+  helmet({
+    // Disable crossOriginResourcePolicy so helmet doesn't block cross-origin
+    // requests that cors() already approved above.
+    crossOriginResourcePolicy: false,
   })
 );
+
 app.use(morgan(process.env.NODE_ENV === 'development' ? 'dev' : 'combined'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+console.log(`🔗 Allowed CORS origins: ${ALLOWED_ORIGINS.join(', ')}`);
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -68,7 +85,6 @@ app.use(errorMiddleware);
 const server = app.listen(PORT, () => {
   console.log(`🚀 TalentOS Backend running on port ${PORT}`);
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🔗 Allowed origins: ${ALLOWED_ORIGINS.join(', ')}`);
 });
 
 process.on('SIGTERM', () => {
