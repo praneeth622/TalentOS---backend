@@ -14,7 +14,7 @@ AI-powered workforce intelligence API with dual-role authentication, productivit
 - **Email:** Resend
 - **Auth:** JWT (dual-role: admin + employee)
 - **Validation:** Zod
-- **Web3:** Polygon Amoy (txHash verification)
+- **Web3:** Metamask
 
 ## Setup
 
@@ -95,7 +95,7 @@ RESEND_FROM_EMAIL="TalentOS <noreply@yourdomain.com>"
                                                                                     → errorMiddleware → Response
 ```
 
-Full diagram and layer rules: **[ARCHITECTURE.md](./ARCHITECTURE.md)**
+Full diagram and layer rules: **[ARCHITECTURE.md](./docs/ARCHITECTURE.md)**
 
 ## Project Structure
 
